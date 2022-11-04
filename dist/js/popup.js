@@ -1,6 +1,5 @@
 "use strict";
 
-document.addEventListener("DOMContentLoaded", onReady);
-function onReady() {
-  document.body.style.color = "blue";
-}
+brapi.runtime.sendMessage({
+  method: "readAloud"
+});
