@@ -1,4 +1,12 @@
-const brapi = (typeof chrome != 'undefined') ? chrome : browser
+
+const playerMessagingPeer = registerMessagingPeer("player", {
+  stop: stopIt,
+})
+
+const playerPromise = readAloud()
+
+
+
 
 async function readAloud() {
   let speech = null
@@ -32,9 +40,9 @@ async function stopIt() {
   player.stop()
 }
 
+
+
 function reportError(err) {
   console.error(err)
   brapi.runtime.sendMessage({method: "onError", error: err.message})
 }
-
-const playerPromise = readAloud()
