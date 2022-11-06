@@ -1,48 +1,24 @@
 
-const playerMessagingPeer = registerMessagingPeer("player", {
-  stop: stopIt,
-})
-
-const playerPromise = readAloud()
-
-
-
-
-async function readAloud() {
-  let speech = null
-  playLoop()
-    .catch(reportError)
-  return {
-    stop() {
-      if (speech) speech.stop()
-      speech = null
-    }
-  }
-}
-
-async function playLoop() {
-  let currentIndex = await readAloudDoc.getCurrentIndex()
-  let texts = await readAloudDoc.getTexts(currentIndex)
-  while (texts) {
-    speech = new Speech(texts, {
-      voiceName: "Google US English",
+const player = makePlaylist(
+  function() {
+    return playerMessagingPeer.sendTo("content-script", {method: "getCurrentIndex"})
+  },
+  async function makeSpeech(index) {
+    const texts = await playerMessagingPeer.sendTo("content-script", {method: "getTexts", index})
+    return new Speech(texts, {
       lang: "en",
+      voice: {
+        voiceName: "Google US English"
+      }
     })
-    await speech.play()
-    await new Promise(f => speech.onEnd = f)
-    speech = null
-    texts = await readAloudDoc.getTexts(++currentIndex)
-  }
-}
+  })
 
-async function stopIt() {
-  const player = await playerPromise
-  player.stop()
-}
+const playerMessagingPeer = registerMessagingPeer("player", player)
 
+player.play()
+  .catch(reportError)
 
 
 function reportError(err) {
   console.error(err)
-  brapi.runtime.sendMessage({method: "onError", error: err.message})
 }

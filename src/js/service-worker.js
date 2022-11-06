@@ -16,15 +16,8 @@ function forwardToPlayer(message) {
 
 async function readAloud() {
   //stop current player if any
-  const targetTabId = await getTargetTabId()
-  if (targetTabId) {
-    brapi.scripting.executeScript({
-      target: {tabId: targetTabId},
-      func: function() {
-        if (typeof stopIt == "function") stopIt().catch(console.error)
-      }
-    })
-  }
+  serviceWorkerMessagingPeer.sendTo("player", {method: "stop"})
+    .catch(err => "OK")
 
   //inject new player into active tab
   const tab = await getActiveTab()
@@ -35,13 +28,12 @@ async function readAloud() {
       'js/common.js',
       'js/messaging.js',
 
+      'js/content/jquery-3.1.1.min.js',
       getContentHandlerFor(tab.url),
       'js/content/content-script.js',
 
       'js/player/engines.js',
       'js/player/speech.js',
-      'js/player/source.js',
-      'js/player/document.js',
       'js/player/player.js',
     ]
   })

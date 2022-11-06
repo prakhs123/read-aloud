@@ -31,7 +31,34 @@ Unless components are colocated, communication happens via message passing.
 
 
 
-//state management -----------------------------------------
+//app configuration
+
+const config = {
+  serviceUrl: "https://support.readaloud.app",
+  webAppUrl: "https://readaloud.app",
+  pdfViewerUrl: "https://assets.lsdsoftware.com/read-aloud/page-scripts/pdf-upload.html",
+  langMap: {
+    iw: 'he'
+  },
+  unsupportedSites: [
+    'https://chrome.google.com/webstore',
+    'https://addons.mozilla.org',
+  ],
+  wavenetPerms: {
+    permissions: ["webRequest"],
+    origins: ["https://*/"]
+  },
+}
+
+const paragraphSplitter = /(?:\s*\r?\n\s*){2,}/
+
+function getContentHandlerFor(url) {
+  return "js/content/html-doc.js"
+}
+
+
+
+//state management
 
 function getState(name) {
   if (Array.isArray(name)) {
@@ -57,10 +84,97 @@ function setTargetTabId(value) {
 
 
 
-//app configuration ----------------------------------------
+//abstraction for playlist playback behavior
 
-function getContentHandlerFor(url) {
-  return "js/content/html-doc.js"
+/**
+ * interface PlaylistItem {
+ *  play: () => Promise<void>
+ *  pause?: () => Promise<void>
+ *  resume?: () => Promise<void>
+ *  stop: () => Promise<void>
+ * }
+ *
+ * getCurrentIndex: () => Promise<number>
+ * makePlaylistItem: (index) => Promise<PlaylistItem>
+ */
+ function makePlaylist(getCurrentIndex, makePlaylistItem) {
+  let index = null
+  let activeItem = null
+  return {
+    async play() {
+      if (index == null) index = await getCurrentIndex()
+      while (activeItem = await makePlaylistItem(index)) {
+        await activeItem.play()
+        activeItem = null
+        index++
+      }
+    },
+    async pause() {
+      if (typeof activeItem.pause == "function") {
+        await activeItem.pause()
+      }
+      else {
+        await activeItem.stop()
+        activeItem = null
+      }
+    },
+    async resume() {
+      await activeItem.resume()
+    },
+    async stop() {
+      await activeItem.stop()
+      activeItem = null
+      index = null
+    },
+  }
+}
+
+
+
+//voice queries
+
+function isGoogleNative(voice) {
+  return /^Google\s/.test(voice.voiceName);
+}
+
+function isChromeOSNative(voice) {
+  return /^Chrome\sOS\s/.test(voice.voiceName);
+}
+
+function isGoogleTranslate(voice) {
+  return /^GoogleTranslate /.test(voice.voiceName);
+}
+
+function isAmazonCloud(voice) {
+  return /^Amazon /.test(voice.voiceName);
+}
+
+function isMicrosoftCloud(voice) {
+  return /^Microsoft /.test(voice.voiceName) && voice.voiceName.indexOf(' - ') == -1;
+}
+
+function isReadAloudCloud(voice) {
+  return /^ReadAloud /.test(voice.voiceName)
+}
+
+function isAmazonPolly(voice) {
+  return /^AmazonPolly /.test(voice.voiceName);
+}
+
+function isGoogleWavenet(voice) {
+  return /^Google(Standard|Wavenet|Neural2) /.test(voice.voiceName);
+}
+
+function isIbmWatson(voice) {
+  return /^IBM-Watson /.test(voice.voiceName);
+}
+
+function isRemoteVoice(voice) {
+  return isAmazonCloud(voice) || isMicrosoftCloud(voice) || isReadAloudCloud(voice) || isGoogleTranslate(voice) || isGoogleWavenet(voice) || isAmazonPolly(voice) || isIbmWatson(voice);
+}
+
+function isPremiumVoice(voice) {
+  return isAmazonCloud(voice) || isMicrosoftCloud(voice);
 }
 
 
@@ -70,6 +184,20 @@ function getContentHandlerFor(url) {
 async function getActiveTab() {
   const [tab] = await brapi.tabs.query({active: true, lastFocusedWindow: true})
   return tab
+}
+
+function escapeHtml(text) {
+  const entityMap = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+    '/': '&#x2F;',
+    '`': '&#x60;',
+    '=': '&#x3D;'
+  }
+  return text.replace(/[&<>"'`=\/]/g, s => entityMap[s])
 }
 
 

@@ -1,45 +1,30 @@
 "use strict";
 
-brapi.runtime.onMessage.addListener(function (message, sender, sendResponse) {
-  const handler = handlers[message.method];
-  if (handler) {
-    Promise.resolve(message).then(handler).then(result => sendResponse({
-      result
-    })).catch(err => sendResponse({
-      error: err.message
-    }));
-    return true;
-  } else {
-    sendResponse({
-      error: "Bad method"
-    });
-  }
+const serviceWorkerMessagingPeer = registerMessagingPeer("service-worker", {
+  readAloud,
+  pause: forwardToPlayer,
+  resume: forwardToPlayer,
+  stop: forwardToPlayer,
+  forward: forwardToPlayer,
+  rewind: forwardToPlayer,
+  seek: forwardToPlayer
 });
-const handlers = {
-  async readAloud() {
-    //stop current
-    const playerTabId = await getState("playerTabId");
-    if (playerTabId) {
-      brapi.scripting.executeScript({
-        target: {
-          tabId: playerTabId
-        },
-        func: function () {
-          stopIt().catch(console.error);
-        }
-      });
-    }
+function forwardToPlayer(message) {
+  return serviceWorkerMessagingPeer.sendTo("player", message);
+}
+async function readAloud() {
+  //stop current player if any
+  serviceWorkerMessagingPeer.sendTo("player", {
+    method: "stop"
+  }).catch(err => "OK");
 
-    //start new
-    const tab = await getActiveTab();
-    await setState({
-      playerTabId: tab.id
-    });
-    brapi.scripting.executeScript({
-      target: {
-        tabId: tab.id
-      },
-      files: ['js/content/common.js', 'js/content/html-doc.js', 'js/player/engines.js', 'js/player/speech.js', 'js/player/player.js']
-    });
-  }
-};
+  //inject new player into active tab
+  const tab = await getActiveTab();
+  await setTargetTabId(tab.id);
+  brapi.scripting.executeScript({
+    target: {
+      tabId: tab.id
+    },
+    files: ['js/common.js', 'js/messaging.js', 'js/content/jquery-3.1.1.min.js', getContentHandlerFor(tab.url), 'js/content/content-script.js', 'js/player/engines.js', 'js/player/speech.js', 'js/player/player.js']
+  });
+}

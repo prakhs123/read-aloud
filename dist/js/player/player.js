@@ -1,36 +1,23 @@
 "use strict";
 
-const brapi = typeof chrome != 'undefined' ? chrome : browser;
-async function readAloud() {
-  let speech = null;
-  player = {
-    stop() {
-      if (speech) speech.stop();
-      speech = null;
+const player = makePlaylist(function () {
+  return playerMessagingPeer.sendTo("content-script", {
+    method: "getCurrentIndex"
+  });
+}, async function makeSpeech(index) {
+  const texts = await playerMessagingPeer.sendTo("content-script", {
+    method: "getTexts",
+    index
+  });
+  return new Speech(texts, {
+    lang: "en",
+    voice: {
+      voiceName: "Google US English"
     }
-  };
-  let currentIndex = await readAloudDoc.getCurrentIndex();
-  let texts = await readAloudDoc.getTexts(currentIndex);
-  while (texts) {
-    speech = new Speech(texts, {
-      voiceName: "Google US English",
-      lang: "en"
-    });
-    await speech.play();
-    await new Promise(f => speech.onEnd = f);
-    speech = null;
-    texts = await readAloudDoc.getTexts(++currentIndex);
-  }
-}
-async function stopIt() {
-  const player = await playerPromise;
-  player.stop();
-}
+  });
+});
+const playerMessagingPeer = registerMessagingPeer("player", player);
+player.play().catch(reportError);
 function reportError(err) {
   console.error(err);
-  brapi.runtime.sendMessage({
-    method: "onError",
-    error: err.message
-  });
 }
-const playerPromise = readAloud();
