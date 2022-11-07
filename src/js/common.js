@@ -22,6 +22,7 @@ Runs in content script for now (may be moved to offscreen document when chrome.o
 
 (4) Content Script
 Provides methods for navigating and scraping the present document
+- getDocumentInfo()
 - getCurrentIndex()
 - getTexts(index)
 
@@ -54,6 +55,45 @@ const paragraphSplitter = /(?:\s*\r?\n\s*){2,}/
 
 function getContentHandlerFor(url) {
   return "js/content/html-doc.js"
+}
+
+
+
+//messaging
+
+const messagingClient = makeMessagingClient(dest => ["content-script", "player"].includes(dest) ? getTargetTabId() : -1)
+
+function makeMessagingClient(getDestinationTabId) {
+  const listeners = {}
+  return {
+    listen(name, handlers) {
+      if (listeners[name]) throw new Error("Listener '" + name + "' already exists")
+      listeners[name] = {
+        async handle(message) {
+          const handler = handlers[message.method]
+          if (!handler) throw new Error("Bad method " + message.method)
+          return handler(message)
+        }
+      }
+      brapi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.dest == name) {
+          listeners[name].handle(message)
+            .then(result => sendResponse({ result }))
+            .catch(err => sendResponse({ error: { message: err.message, stack: err.stack } }))
+          return true
+        }
+      })
+    },
+    async sendTo(dest, message) {
+      if (message === undefined) return message => sendTo(dest, message)
+      message.dest = dest
+      if (listeners[dest]) return listeners[dest].handle(message)
+      const tabId = await getDestinationTabId(dest)
+      const response = await (tabId != -1 ? brapi.tabs.sendMessage(tabId, message) : brapi.runtime.sendMessage(message))
+      if (response.error) throw response.error
+      else return response.result
+    }
+  }
 }
 
 
@@ -198,6 +238,11 @@ function escapeHtml(text) {
     '=': '&#x3D;'
   }
   return text.replace(/[&<>"'`=\/]/g, s => entityMap[s])
+}
+
+function memoize(get) {
+  let value
+  return () => value || (value = get())
 }
 
 

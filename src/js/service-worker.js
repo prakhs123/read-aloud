@@ -26,7 +26,6 @@ async function readAloud() {
     target: {tabId: tab.id},
     files: [
       'js/common.js',
-      'js/messaging.js',
 
       'js/content/jquery-3.1.1.min.js',
       getContentHandlerFor(tab.url),

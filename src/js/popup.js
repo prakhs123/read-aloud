@@ -1,12 +1,9 @@
 
-const popupMessagingPeer = registerMessagingPeer("popup", {
-  onPlaybackStatusUpdate
+messagingClient.listen("popup", {
+  onPlaybackStatusUpdate(message) {
+    console.info(message)
+  }
 })
 
-popupMessagingPeer.sendTo("service-worker", {method: "readAloud"})
+messagingClient.sendTo("service-worker", {method: "readAloud"})
   .catch(console.error)
-
-
-function onPlaybackStatusUpdate(message) {
-  console.info(message)
-}
