@@ -245,6 +245,10 @@ function memoize(get) {
   return () => value || (value = get())
 }
 
+function isRTL(language) {
+  return /^(ar|az|dv|he|iw|ku|fa|ur)\b/.test(language)
+}
+
 
 
 //content-script helpers -----------------------------------

@@ -13,14 +13,29 @@
     let texts = await messagingClient.sendTo("content-script", {method: "getTexts", index})
 
     //language detection
-    const text = texts.reduce((acc, text) => acc.length < 3000 ? acc + " " + text : acc)
-    if (!d.detectedLanguage)
-      d.detectedLanguage = await detectLanguageReliably(text)
-    let chosenLanguage = !d.detectedLanguage || d.declaredLanguage?.startsWith(d.detectedLanguage)
-      ? d.declaredLanguage
-      : d.detectedLanguage
-    if (!chosenLanguage)
-      chosenLanguage = await detectLanguageBestEffort(text)
+    let chosenLanguage
+    if (d.detectedLanguage) {
+      chosenLanguage = d.declaredLanguage?.startsWith(d.detectedLanguage)
+        ? d.declaredLanguage
+        : d.detectedLanguage
+    }
+    else {
+      const result = await detectLanguageOf(texts)
+      if (result) {
+        if (result.isReliable) {
+          d.detectedLanguage = result.language
+          chosenLanguage = d.declaredLanguage?.startsWith(d.detectedLanguage)
+            ? d.declaredLanguage
+            : d.detectedLanguage
+        }
+        else {//not reliable
+          chosenLanguage = d.declaredLanguage || result.language
+        }
+      }
+      else {//detection fails
+        chosenLanguage = d.declaredLanguage || "en"
+      }
+    }
 
     //construct the speech options
     const settings = await getState(["voiceName", "rate", "pitch", "volume"])
@@ -48,61 +63,46 @@
 
   //language detection
 
-  function detectLanguageReliably(text) {
-    if (text.length >= 240) return detectLanguageOf(output)
+  async function detectLanguageOf(texts) {
+    const text = texts.reduce((acc, text) => acc.length < 1200 ? acc + " " + text : acc)
+    const result = await browserDetectLanguage(text)
+    return result?.isReliable ? result : await serverDetectLanguage(text)
   }
 
-  function detectLanguageBestEffort(text) {
-
-  }
-
-  function detectLanguageOf(text) {
-    if (text.length < 100) {
-      //too little text, use cloud detection for improved accuracy
-      return serverDetectLanguage(text)
-        .then(function(result) {
-          return result || browserDetectLanguage(text)
-        })
-        .then(function(lang) {
-          //exclude commonly misdetected languages
-          return ["cy", "eo"].includes(lang) ? null : lang
-        })
+  async function browserDetectLanguage(text) {
+    try {
+      if (brapi.i18n.detectLanguage) {
+        const {isReliable, languages} = await brapi.i18n.detectLanguage(text)
+        const language = languages
+          .filter(x => x.language != "und")
+          .sort((a,b) => b.percentage-a.percentage)
+          [0]?.language
+        return {
+          language,
+          isReliable
+        }
+      }
     }
-    return browserDetectLanguage(text)
-      .then(function(result) {
-        return result || serverDetectLanguage(text);
+    catch (err) {
+      console.error(err)
+    }
+  }
+
+  async function serverDetectLanguage(text) {
+    try {
+      const results = await fetch(config.serviceUrl + "/read-aloud/detect-language", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({text}),
       })
-  }
-
-  function browserDetectLanguage(text) {
-    if (!brapi.i18n.detectLanguage) return Promise.resolve(null);
-    return new Promise(function(fulfill) {
-      brapi.i18n.detectLanguage(text, fulfill);
-    })
-    .then(function(result) {
-      if (result) {
-          var list = result.languages.filter(function(item) {return item.language != "und"});
-          list.sort(function(a,b) {return b.percentage-a.percentage});
-          return list[0] && list[0].language;
-      }
-      else {
-        return null;
-      }
-    })
-  }
-
-  function serverDetectLanguage(text) {
-      return ajaxPost(config.serviceUrl + "/read-aloud/detect-language", {text: text}, "json")
-        .then(JSON.parse)
-        .then(function(res) {
-          var result = Array.isArray(res) ? res[0] : res
-          if (result && result.language && result.language != "und") return result.language
-          else return null
-        })
-        .catch(function(err) {
-          console.error(err)
-          return null
-        })
+        .then(x => x.json())
+      return results
+        .filter(x => x.language != "und")
+        [0]
+    }
+    catch (err) {
+      console.error(err)
+    }
   }
 
 
@@ -110,14 +110,29 @@
 
   //voice querying
 
+  async function getVoices() {
+    const {awsCreds, gcpCreds} = await getState(["awsCreds", "gcpCreds"])
+    return Promise.all([
+      browserTtsEngine.getVoices(),
+      googleTranslateTtsEngine.getVoices(),
+      remoteTtsEngine.getVoices(),
+      awsCreds ? amazonPollyTtsEngine.getVoices() : [],
+      gcpCreds ? googleWavenetTtsEngine.getVoices() : googleWavenetTtsEngine.getFreeVoices(),
+      ibmWatsonTtsEngine.getVoices(),
+    ])
+    .then(arr => arr.flat())
+  }
+
   async function getSpeechVoice(voiceName, lang) {
-    const [voices, {preferredVoices}] = await Promise.all([getVoices(), getState(["preferredVoices"])])
-    const preferredVoiceByLang = preferredVoices || {}
+    const [voices, preferredVoices] = await Promise.all([
+      getVoices(),
+      getState("preferredVoices").then(x => x || {})
+    ])
     let voice
     if (voiceName)
       voice = findVoiceByName(voices, voiceName)
     if (!voice && lang) {
-      voiceName = preferredVoiceByLang[lang.split("-")[0]]
+      voiceName = preferredVoices[lang.split("-")[0]]
       if (voiceName)
         voice = findVoiceByName(voices, voiceName)
     }

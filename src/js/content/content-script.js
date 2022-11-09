@@ -12,6 +12,10 @@
     getTexts({index, quietly}) {
       return readAloudDoc.getTexts(index, quietly)
         .then(texts => texts.length ? texts : null)
+        .then(texts => {
+          if (texts) for (var i=0; i<texts.length; i++) if (/[\w)]$/.test(texts[i])) texts[i] += '.';
+          return texts
+        })
     },
   })
 
