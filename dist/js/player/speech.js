@@ -1,10 +1,10 @@
 "use strict";
 
-function makeSpeech(texts, options) {
+function makeSpeech(texts, options, listeners) {
   options.rate = (options.rate || 1) * (isGoogleNative(options.voice) ? 0.9 : 1);
   const pauseDuration = 650 / options.rate;
   let delayedPlayTimer;
-  const playlist = makePlaylist(() => 0, index => makeUtterance(texts[index], options));
+  const playlist = makePlaylist(() => 0, index => makeUtterance(texts[index], options, listeners));
   return {
     async play() {
       await playlist.play();
@@ -14,25 +14,13 @@ function makeSpeech(texts, options) {
     }
   };
 }
-function makeUtterance(text, options) {
+function makeUtterance(text, options, listeners) {
   return {
     play() {
       return new Promise((fulfill, reject) => {
-        let isResolved = false;
+        listeners.onLoading(true);
         options.engine.speak(text, options, event => {
-          if (event.type == "start") {
-            //raise event
-          } else if (event.type == "end") {
-            fulfill();
-            isResolved = true;
-          } else if (event.type == "error") {
-            if (!isResolved) {
-              reject(new Error(event.errorMessage));
-              isResolved = true;
-            } else {
-              //raise event
-            }
-          }
+          if (event.type == "start") listeners.onLoading(false);else if (event.type == "end") fulfill();else if (event.type == "error") reject(new Error(event.errorMessage));
         });
       });
     },

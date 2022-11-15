@@ -69,12 +69,24 @@ function makeMessagingClient(getDestinationTabId) {
         if (message.dest == name) {
           listeners[name].handle(message).then(result => sendResponse({
             result
-          })).catch(err => sendResponse({
-            error: {
-              message: err.message,
-              stack: err.stack
+          })).catch(err => {
+            if (err instanceof Error) {
+              if (err.message.startsWith("{")) sendResponse({
+                error: Object.assign({
+                  stack: err.stack
+                }, JSON.parse(err.message))
+              });else sendResponse({
+                error: {
+                  message: err.message,
+                  stack: err.stack
+                }
+              });
+            } else {
+              sendResponse({
+                error: err
+              });
             }
-          }));
+          });
           return true;
         }
       });
@@ -85,7 +97,14 @@ function makeMessagingClient(getDestinationTabId) {
       if (listeners[dest]) return listeners[dest].handle(message);
       const tabId = await getDestinationTabId(dest);
       const response = await (tabId != -1 ? brapi.tabs.sendMessage(tabId, message) : brapi.runtime.sendMessage(message));
-      if (response.error) throw response.error;else return response.result;
+      if (response) {
+        if (response.error) throw response.error;else return response.result;
+      } else {
+        throw {
+          code: "DEST_NOT_FOUND",
+          message: "Destination not found"
+        };
+      }
     }
   };
 }
@@ -257,6 +276,32 @@ function parseLang(lang) {
     lang: tokens[0],
     rest: tokens[1]
   };
+}
+async function sendErrorReport(url, err) {
+  if (err !== null && err !== void 0 && err.stack) {
+    let details = err.stack;
+    if (!details.startsWith(err.name)) details = err.name + ": " + err.message + "\n" + details;
+    await sendIssueReport(url, details);
+  }
+}
+async function sendIssueReport(url, comment) {
+  const manifest = brapi.runtime.getManifest();
+  const report = await getSettings(["voiceName", "rate", "pitch", "volume", "showHighlighting", "languages", "highlightFontSize", "highlightWindowSize", "preferredVoices"]);
+  Object.assign(report, {
+    url,
+    version: manifest.version,
+    userAgent: navigator.userAgent
+  });
+  await fetch(config.serviceUrl + "/read-aloud/report-issue", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: new URLSearchParams({
+      url: JSON.stringify(report),
+      comment
+    })
+  });
 }
 
 //content-script helpers -----------------------------------

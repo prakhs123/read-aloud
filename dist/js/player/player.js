@@ -8,7 +8,15 @@
     method: "getCurrentIndex"
   }), makeSpeechFor);
   messagingClient.listen("player", player);
-  player.play().catch(reportError);
+  player.play().then(() => reportStatus({
+    status: "IDLE"
+  })).catch(err => {
+    reportStatus({
+      status: "IDLE",
+      error: err.message
+    });
+    getDocumentInfoMemoized().then(d => sendErrorReport(d.url, err)).catch(console.error);
+  });
   async function makeSpeechFor(index) {
     const d = await getDocumentInfoMemoized();
     let texts = await messagingClient.sendTo("content-script", {
@@ -54,10 +62,21 @@
       volume: settings.volume
     };
     texts = reassemble(texts, options);
-    return makeSpeech(texts, options);
+    return makeSpeech(texts, options, {
+      onLoading(isLoading) {
+        reportStatus({
+          status: isLoading ? "LOADING" : "PLAYING"
+        });
+      }
+    });
   }
-  function reportError(err) {
-    console.error(err);
+  function reportStatus(statusInfo) {
+    messagingClient.sendTo("popup", {
+      method: "onPlaybackStatusUpdate",
+      statusInfo
+    }).catch(err => {
+      if (err.code != "DEST_NOT_FOUND") console.error(err);
+    });
   }
 
   //language detection

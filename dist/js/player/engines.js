@@ -1269,7 +1269,7 @@ function AmazonPollyTtsEngine() {
     const res = await fetch(config.serviceUrl + "/read-aloud/list-voices/amazon");
     const list = await res.json();
     list[0].ts = Date.now();
-    updateSettings({
+    await updateSettings({
       pollyVoices: list
     });
   }
@@ -1832,7 +1832,7 @@ function GoogleWavenetTtsEngine() {
     const res = await fetch(config.serviceUrl + "/read-aloud/list-voices/google");
     const list = await res.json();
     list[0].ts = Date.now();
-    updateSettings({
+    await updateSettings({
       wavenetVoices: list
     });
   }

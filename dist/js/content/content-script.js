@@ -4,6 +4,7 @@
   messagingClient.listen("content-script", {
     getDocumentInfo() {
       return {
+        url: location.href,
         declaredLanguage: getDeclaredLanguage()
       };
     },
