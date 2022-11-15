@@ -1,5 +1,5 @@
 
-const serviceWorkerMessagingPeer = registerMessagingPeer("service-worker", {
+const serviceWorkerMessagingPeer = messagingClient.listen("service-worker", {
   readAloud,
   pause: forwardToPlayer,
   resume: forwardToPlayer,
@@ -10,13 +10,13 @@ const serviceWorkerMessagingPeer = registerMessagingPeer("service-worker", {
 })
 
 function forwardToPlayer(message) {
-  return serviceWorkerMessagingPeer.sendTo("player", message)
+  return messagingClient.sendTo("player", message)
 }
 
 
 async function readAloud() {
   //stop current player if any
-  serviceWorkerMessagingPeer.sendTo("player", {method: "stop"})
+  messagingClient.sendTo("player", {method: "stop"})
     .catch(err => "OK")
 
   //inject new player into active tab

@@ -1,14 +1,14 @@
 
 (function() {
   const getDocumentInfoMemoized = memoize(() => messagingClient.sendTo("content-script", {method: "getDocumentInfo"}))
-  const player = makePlaylist(() => messagingClient.sendTo("content-script", {method: "getCurrentIndex"}), makeSpeech)
+  const player = makePlaylist(() => messagingClient.sendTo("content-script", {method: "getCurrentIndex"}), makeSpeechFor)
 
   messagingClient.listen("player", player)
   player.play()
     .catch(reportError)
 
 
-  async function makeSpeech(index) {
+  async function makeSpeechFor(index) {
     const d = await getDocumentInfoMemoized()
     let texts = await messagingClient.sendTo("content-script", {method: "getTexts", index})
 
@@ -38,7 +38,7 @@
     }
 
     //construct the speech options
-    const settings = await getState(["voiceName", "rate", "pitch", "volume"])
+    const settings = await getSettings(["voiceName", "rate", "pitch", "volume"])
     const voice = await getSpeechVoice(settings.voiceName, chosenLanguage)
     if (!voice) throw new Error(JSON.stringify({code: "error_no_voice", lang: chosenLanguage}))
     const options = {
@@ -51,7 +51,7 @@
     }
 
     texts = reassemble(texts, options)
-    return new Speech(texts, options)
+    return makeSpeech(texts, options)
   }
 
   function reportError(err) {
@@ -111,7 +111,7 @@
   //voice querying
 
   async function getVoices() {
-    const {awsCreds, gcpCreds} = await getState(["awsCreds", "gcpCreds"])
+    const {awsCreds, gcpCreds} = await getSettings(["awsCreds", "gcpCreds"])
     return Promise.all([
       browserTtsEngine.getVoices(),
       googleTranslateTtsEngine.getVoices(),
@@ -126,7 +126,7 @@
   async function getSpeechVoice(voiceName, lang) {
     const [voices, preferredVoices] = await Promise.all([
       getVoices(),
-      getState("preferredVoices").then(x => x || {})
+      getSettings("preferredVoices").then(x => x || {})
     ])
     let voice
     if (voiceName)

@@ -9,13 +9,15 @@
     getCurrentIndex() {
       return readAloudDoc.getCurrentIndex()
     },
-    getTexts({index, quietly}) {
-      return readAloudDoc.getTexts(index, quietly)
-        .then(texts => texts.length ? texts : null)
-        .then(texts => {
-          if (texts) for (var i=0; i<texts.length; i++) if (/[\w)]$/.test(texts[i])) texts[i] += '.';
-          return texts
-        })
+    async getTexts({index}) {
+      const texts = await readAloudDoc.getTexts(index)
+      if (texts?.length) {
+        for (var i=0; i<texts.length; i++) if (/[\w)]$/.test(texts[i])) texts[i] += '.'
+        return texts
+      }
+      else {
+        return null
+      }
     },
   })
 

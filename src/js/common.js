@@ -122,6 +122,20 @@ function setTargetTabId(value) {
   return setState({targetTabId: value})
 }
 
+function getSettings(name) {
+  if (Array.isArray(name)) {
+    return brapi.storage.local.get(name)
+  }
+  else {
+    return brapi.storage.local.get([name])
+      .then(items => items[name])
+  }
+}
+
+function updateSettings(items) {
+  return brapi.storage.local.set(items)
+}
+
 
 
 //abstraction for playlist playback behavior
@@ -247,6 +261,37 @@ function memoize(get) {
 
 function isRTL(language) {
   return /^(ar|az|dv|he|iw|ku|fa|ur)\b/.test(language)
+}
+
+function promiseTimeout(millis, errorMsg, promise) {
+  return new Promise(function(fulfill, reject) {
+    var timedOut = false;
+    var timer = setTimeout(onTimeout, millis);
+    promise.then(onFulfill, onReject);
+
+    function onFulfill(value) {
+      if (timedOut) return;
+      clearTimeout(timer);
+      fulfill(value);
+    }
+    function onReject(err) {
+      if (timedOut) return;
+      clearTimeout(timer);
+      reject(err);
+    }
+    function onTimeout() {
+      timedOut = true;
+      reject(new Error(errorMsg));
+    }
+  })
+}
+
+function parseLang(lang) {
+  const tokens = lang.toLowerCase().replace(/_/g, '-').split(/-/, 2)
+  return {
+    lang: tokens[0],
+    rest: tokens[1]
+  }
 }
 
 

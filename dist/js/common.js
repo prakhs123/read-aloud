@@ -22,6 +22,7 @@ Runs in content script for now (may be moved to offscreen document when chrome.o
 
 (4) Content Script
 Provides methods for navigating and scraping the present document
+- getDocumentInfo()
 - getCurrentIndex()
 - getTexts(index)
 
@@ -49,6 +50,46 @@ function getContentHandlerFor(url) {
   return "js/content/html-doc.js";
 }
 
+//messaging
+
+const messagingClient = makeMessagingClient(dest => ["content-script", "player"].includes(dest) ? getTargetTabId() : -1);
+function makeMessagingClient(getDestinationTabId) {
+  const listeners = {};
+  return {
+    listen(name, handlers) {
+      if (listeners[name]) throw new Error("Listener '" + name + "' already exists");
+      listeners[name] = {
+        async handle(message) {
+          const handler = handlers[message.method];
+          if (!handler) throw new Error("Bad method " + message.method);
+          return handler(message);
+        }
+      };
+      brapi.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.dest == name) {
+          listeners[name].handle(message).then(result => sendResponse({
+            result
+          })).catch(err => sendResponse({
+            error: {
+              message: err.message,
+              stack: err.stack
+            }
+          }));
+          return true;
+        }
+      });
+    },
+    async sendTo(dest, message) {
+      if (message === undefined) return message => sendTo(dest, message);
+      message.dest = dest;
+      if (listeners[dest]) return listeners[dest].handle(message);
+      const tabId = await getDestinationTabId(dest);
+      const response = await (tabId != -1 ? brapi.tabs.sendMessage(tabId, message) : brapi.runtime.sendMessage(message));
+      if (response.error) throw response.error;else return response.result;
+    }
+  };
+}
+
 //state management
 
 function getState(name) {
@@ -68,6 +109,16 @@ function setTargetTabId(value) {
   return setState({
     targetTabId: value
   });
+}
+function getSettings(name) {
+  if (Array.isArray(name)) {
+    return brapi.storage.local.get(name);
+  } else {
+    return brapi.storage.local.get([name]).then(items => items[name]);
+  }
+}
+function updateSettings(items) {
+  return brapi.storage.local.set(items);
 }
 
 //abstraction for playlist playback behavior
@@ -171,6 +222,41 @@ function escapeHtml(text) {
     '=': '&#x3D;'
   };
   return text.replace(/[&<>"'`=\/]/g, s => entityMap[s]);
+}
+function memoize(get) {
+  let value;
+  return () => value || (value = get());
+}
+function isRTL(language) {
+  return /^(ar|az|dv|he|iw|ku|fa|ur)\b/.test(language);
+}
+function promiseTimeout(millis, errorMsg, promise) {
+  return new Promise(function (fulfill, reject) {
+    var timedOut = false;
+    var timer = setTimeout(onTimeout, millis);
+    promise.then(onFulfill, onReject);
+    function onFulfill(value) {
+      if (timedOut) return;
+      clearTimeout(timer);
+      fulfill(value);
+    }
+    function onReject(err) {
+      if (timedOut) return;
+      clearTimeout(timer);
+      reject(err);
+    }
+    function onTimeout() {
+      timedOut = true;
+      reject(new Error(errorMsg));
+    }
+  });
+}
+function parseLang(lang) {
+  const tokens = lang.toLowerCase().replace(/_/g, '-').split(/-/, 2);
+  return {
+    lang: tokens[0],
+    rest: tokens[1]
+  };
 }
 
 //content-script helpers -----------------------------------

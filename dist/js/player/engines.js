@@ -243,7 +243,7 @@ function RemoteTtsEngine(serviceUrl) {
   };
   this.prefetch = function (utterance, options) {
     if (!iOS) {
-      ajaxGet(getAudioUrl(utterance, options.lang, options.voice, true));
+      fetch(getAudioUrl(utterance, options.lang, options.voice, true)).catch(err => "Ignore");
     }
   };
   this.setNextStartTime = function (time, options) {
@@ -1265,12 +1265,12 @@ function AmazonPollyTtsEngine() {
       return items.pollyVoices || voices;
     });
   };
-  function updateVoices() {
-    ajaxGet(config.serviceUrl + "/read-aloud/list-voices/amazon").then(JSON.parse).then(function (list) {
-      list[0].ts = Date.now();
-      updateSettings({
-        pollyVoices: list
-      });
+  async function updateVoices() {
+    const res = await fetch(config.serviceUrl + "/read-aloud/list-voices/amazon");
+    const list = await res.json();
+    list[0].ts = Date.now();
+    updateSettings({
+      pollyVoices: list
     });
   }
   function getAudioUrl(text, lang, voice, pitch) {
@@ -1828,47 +1828,70 @@ function GoogleWavenetTtsEngine() {
       });
     });
   };
-  function updateVoices() {
-    ajaxGet(config.serviceUrl + "/read-aloud/list-voices/google").then(JSON.parse).then(function (list) {
-      list[0].ts = Date.now();
-      updateSettings({
-        wavenetVoices: list
-      });
+  async function updateVoices() {
+    const res = await fetch(config.serviceUrl + "/read-aloud/list-voices/google");
+    const list = await res.json();
+    list[0].ts = Date.now();
+    updateSettings({
+      wavenetVoices: list
     });
   }
-  function getAudioUrl(text, voice, pitch) {
+  async function getAudioUrl(text, voice, pitch) {
     assert(text && voice && pitch != null);
-    var matches = voice.voiceName.match(/^Google(\w+) .* \((\w+)\)$/);
-    var voiceName = voice.lang + "-" + matches[1] + "-" + matches[2][0];
-    var endpoint = matches[1] == "Neural2" ? "us-central1-texttospeech.googleapis.com" : "texttospeech.googleapis.com";
-    return getSettings(["gcpCreds", "gcpToken"]).then(function (settings) {
-      var postData = {
-        input: {
-          text: text
+    const matches = voice.voiceName.match(/^Google(\w+) .* \((\w+)\)$/);
+    const voiceName = voice.lang + "-" + matches[1] + "-" + matches[2][0];
+    const endpoint = matches[1] == "Neural2" ? "us-central1-texttospeech.googleapis.com" : "texttospeech.googleapis.com";
+    const settings = await getSettings(["gcpCreds", "gcpToken"]);
+    const postData = {
+      input: {
+        text: text
+      },
+      voice: {
+        languageCode: voice.lang,
+        name: voiceName
+      },
+      audioConfig: {
+        audioEncoding: "OGG_OPUS",
+        pitch: (pitch - 1) * 20
+      }
+    };
+    if (settings.gcpCreds) {
+      const res = await fetch("https://" + endpoint + "/v1/text:synthesize?key=" + settings.gcpCreds.apiKey, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
         },
-        voice: {
-          languageCode: voice.lang,
-          name: voiceName
-        },
-        audioConfig: {
-          audioEncoding: "OGG_OPUS",
-          pitch: (pitch - 1) * 20
-        }
-      };
-      if (settings.gcpCreds) return ajaxPost("https://" + endpoint + "/v1/text:synthesize?key=" + settings.gcpCreds.apiKey, postData, "json");
-      if (!settings.gcpToken) throw new Error(JSON.stringify({
-        code: "error_wavenet_auth_required"
-      }));
-      return ajaxPost("https://cxl-services.appspot.com/proxy?url=https://texttospeech.googleapis.com/v1beta1/text:synthesize&token=" + settings.gcpToken, postData, "json").catch(function (err) {
+        body: JSON.stringify(postData)
+      });
+      const {
+        audioContent
+      } = await res.json();
+      return "data:audio/ogg;codecs=opus;base64," + audioContent;
+    }
+    if (settings.gcpToken) {
+      try {
+        const res = await fetch("https://cxl-services.appspot.com/proxy?url=https://texttospeech.googleapis.com/v1beta1/text:synthesize&token=" + settings.gcpToken, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(postData)
+        });
+        const {
+          audioContent
+        } = await res.json();
+        return "data:audio/ogg;codecs=opus;base64," + audioContent;
+      } catch (err) {
         console.error(err);
         throw new Error(JSON.stringify({
           code: "error_wavenet_auth_required"
         }));
-      });
-    }).then(function (responseText) {
-      var data = JSON.parse(responseText);
-      return "data:audio/ogg;codecs=opus;base64," + data.audioContent;
-    });
+      }
+    } else {
+      throw new Error(JSON.stringify({
+        code: "error_wavenet_auth_required"
+      }));
+    }
   }
   var voices = [{
     "voiceName": "GoogleWavenet Arabic (Anna)",
@@ -2730,37 +2753,36 @@ function IbmWatsonTtsEngine() {
     });
   };
   this.fetchVoices = fetchVoices;
-  function getAudioUrl(text, voice) {
+  async function getAudioUrl(text, voice) {
     assert(text && voice);
-    var matches = voice.voiceName.match(/^IBM-Watson .* \((\w+)\)$/);
-    var voiceName = voice.lang + "_" + matches[1] + "Voice";
-    return getSettings(["ibmCreds"]).then(function (settings) {
-      return ajaxGet({
-        url: settings.ibmCreds.url + "/v1/synthesize?text=" + encodeURIComponent(escapeHtml(text)) + "&voice=" + encodeURIComponent(voiceName) + "&accept=" + encodeURIComponent("audio/ogg;codecs=opus"),
-        headers: {
-          Authorization: "Basic " + btoa("apikey:" + settings.ibmCreds.apiKey)
-        },
-        responseType: "blob"
-      });
-    }).then(function (blob) {
-      return URL.createObjectURL(blob);
+    const matches = voice.voiceName.match(/^IBM-Watson .* \((\w+)\)$/);
+    const voiceName = voice.lang + "_" + matches[1] + "Voice";
+    const ibmCreds = await getSettings("ibmCreds");
+    const url = ibmCreds.url + "/v1/synthesize?text=" + encodeURIComponent(escapeHtml(text)) + "&voice=" + encodeURIComponent(voiceName) + "&accept=" + encodeURIComponent("audio/ogg;codecs=opus");
+    const res = await fetch(url, {
+      headers: {
+        Authorization: "Basic " + btoa("apikey:" + ibmCreds.apiKey)
+      }
     });
+    const blob = await res.blob();
+    return URL.createObjectURL(blob);
   }
-  function fetchVoices(apiKey, url) {
-    return ajaxGet({
-      url: url + "/v1/voices",
+  async function fetchVoices(apiKey, url) {
+    const res = await fetch(url + "/v1/voices", {
       headers: {
         Authorization: "Basic " + btoa("apikey:" + apiKey)
       }
-    }).then(JSON.parse).then(function (data) {
-      return data.voices.map(item => {
-        item.description = item.description.replace(/Chinese \((Mandarin|Cantonese)\)/, "Chinese, $1");
-        return {
-          voiceName: "IBM-Watson " + item.description.split(/: | male| female| \(/)[1] + " (" + item.name.slice(item.language.length + 1, -5) + ")",
-          lang: item.language,
-          gender: item.gender
-        };
-      });
+    });
+    const {
+      voices
+    } = await res.json();
+    return voices.map(item => {
+      item.description = item.description.replace(/Chinese \((Mandarin|Cantonese)\)/, "Chinese, $1");
+      return {
+        voiceName: "IBM-Watson " + item.description.split(/: | male| female| \(/)[1] + " (" + item.name.slice(item.language.length + 1, -5) + ")",
+        lang: item.language,
+        gender: item.gender
+      };
     });
   }
 }
