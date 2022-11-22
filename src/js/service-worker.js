@@ -21,8 +21,24 @@ async function readAloud() {
 
   //inject new player into active tab
   const tab = await getActiveTab()
+  if (!tab) throw {code: "error_page_unreadable"}
   await setTargetTabId(tab.id)
-  brapi.scripting.executeScript({
+  if (await isPlayerAlreadyInjected(tab)) await messagingClient.sendTo("player", {method: "play"})
+  else await injectPlayer(tab)
+}
+
+async function isPlayerAlreadyInjected(tab) {
+  const [{result}] = await brapi.scripting.executeScript({
+    target: {tabId: tab.id},
+    func: function() {
+      return typeof brapi != "undefined"
+    }
+  })
+  return result == true
+}
+
+async function injectPlayer(tab) {
+  await brapi.scripting.executeScript({
     target: {tabId: tab.id},
     files: [
       'js/common.js',

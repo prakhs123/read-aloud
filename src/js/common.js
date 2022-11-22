@@ -49,6 +49,14 @@ const config = {
     permissions: ["webRequest"],
     origins: ["https://*/"]
   },
+  defaults: {
+    rate: 1.0,
+    pitch: 1.0,
+    volume: 1.0,
+    showHighlighting: 1,
+    highlightFontSize: 3,
+    highlightWindowSize: 2,
+  },
 }
 
 const paragraphSplitter = /(?:\s*\r?\n\s*){2,}/
@@ -79,15 +87,7 @@ function makeMessagingClient(getDestinationTabId) {
         if (message.dest == name) {
           listeners[name].handle(message)
             .then(result => sendResponse({result}))
-            .catch(err => {
-              if (err instanceof Error) {
-                if (err.message.startsWith("{")) sendResponse({error: Object.assign({stack: err.stack}, JSON.parse(err.message))})
-                else sendResponse({error: {message: err.message, stack: err.stack}})
-              }
-              else {
-                sendResponse({error: err})
-              }
-            })
+            .catch(err => sendResponse({error: wrapError(err)}))
           return true
         }
       })
@@ -99,11 +99,11 @@ function makeMessagingClient(getDestinationTabId) {
       const tabId = await getDestinationTabId(dest)
       const response = await (tabId != -1 ? brapi.tabs.sendMessage(tabId, message) : brapi.runtime.sendMessage(message))
       if (response) {
-        if (response.error) throw response.error
+        if (response.error) throw wrapError(response.error)
         else return response.result
       }
       else {
-        throw {code: "DEST_NOT_FOUND", message: "Destination not found"}
+        throw {code: "DEST_NOT_FOUND"}
       }
     }
   }
@@ -147,53 +147,6 @@ function getSettings(name) {
 
 function updateSettings(items) {
   return brapi.storage.local.set(items)
-}
-
-
-
-//abstraction for playlist playback behavior
-
-/**
- * interface PlaylistItem {
- *  play: () => Promise<void>
- *  pause?: () => Promise<void>
- *  resume?: () => Promise<void>
- *  stop: () => Promise<void>
- * }
- *
- * getCurrentIndex: () => Promise<number>
- * makePlaylistItem: (index) => Promise<PlaylistItem>
- */
- function makePlaylist(getCurrentIndex, makePlaylistItem) {
-  let index = null
-  let activeItem = null
-  return {
-    async play() {
-      if (index == null) index = await getCurrentIndex()
-      while (activeItem = await makePlaylistItem(index)) {
-        await activeItem.play()
-        activeItem = null
-        index++
-      }
-    },
-    async pause() {
-      if (typeof activeItem.pause == "function") {
-        await activeItem.pause()
-      }
-      else {
-        await activeItem.stop()
-        activeItem = null
-      }
-    },
-    async resume() {
-      await activeItem.resume()
-    },
-    async stop() {
-      await activeItem.stop()
-      activeItem = null
-      index = null
-    },
-  }
 }
 
 
@@ -253,20 +206,6 @@ async function getActiveTab() {
   return tab
 }
 
-function escapeHtml(text) {
-  const entityMap = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-    '/': '&#x2F;',
-    '`': '&#x60;',
-    '=': '&#x3D;'
-  }
-  return text.replace(/[&<>"'`=\/]/g, s => entityMap[s])
-}
-
 function memoize(get) {
   let value
   return () => value || (value = get())
@@ -299,12 +238,10 @@ function promiseTimeout(millis, errorMsg, promise) {
   })
 }
 
-function parseLang(lang) {
-  const tokens = lang.toLowerCase().replace(/_/g, '-').split(/-/, 2)
-  return {
-    lang: tokens[0],
-    rest: tokens[1]
-  }
+function reportError(err) {
+  console.error(err)
+  //sendErrorReport(null, err)
+    //.catch(console.error)
 }
 
 async function sendErrorReport(url, err) {
@@ -341,6 +278,21 @@ async function sendIssueReport(url, comment) {
       comment,
     })
   })
+}
+
+function wrapError(err) {
+  const toString = function() {
+    return "Error: " + (this.message || this.code)
+  }
+  if (err instanceof Error) {
+    return err.message.startsWith("{")
+      ? Object.assign({stack: err.stack, toString}, JSON.parse(err.message))
+      : {stack: err.stack, message: err.message, toString}
+  }
+  else {
+    err.toString = toString
+    return err
+  }
 }
 
 

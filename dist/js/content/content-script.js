@@ -16,7 +16,7 @@
         index
       } = _ref;
       const texts = await readAloudDoc.getTexts(index);
-      if (texts !== null && texts !== void 0 && texts.length) {
+      if (texts) {
         for (var i = 0; i < texts.length; i++) if (/[\w)]$/.test(texts[i])) texts[i] += '.';
         return texts;
       } else {

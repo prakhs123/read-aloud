@@ -1172,6 +1172,19 @@ function IbmWatsonTtsEngine() {
     const blob = await res.blob()
     return URL.createObjectURL(blob)
   }
+  function escapeHtml(text) {
+    const entityMap = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+      '/': '&#x2F;',
+      '`': '&#x60;',
+      '=': '&#x3D;'
+    }
+    return text.replace(/[&<>"'`=\/]/g, s => entityMap[s])
+  }
   async function fetchVoices(apiKey, url) {
     const res = await fetch(url + "/v1/voices", {
       headers: {

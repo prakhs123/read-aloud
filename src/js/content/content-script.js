@@ -12,7 +12,7 @@
     },
     async getTexts({index}) {
       const texts = await readAloudDoc.getTexts(index)
-      if (texts?.length) {
+      if (texts) {
         for (var i=0; i<texts.length; i++) if (/[\w)]$/.test(texts[i])) texts[i] += '.'
         return texts
       }
